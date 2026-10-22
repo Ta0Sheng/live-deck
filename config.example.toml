@@ -38,6 +38,12 @@ flash_model = "deepseek-flash"
 temperature = 0.7
 max_tokens = 40
 
+# 样本检索：true = 按当前场面找最像的样本；false = 退回旧行为（只取最近 N 条）
+retrieval = true
+good_k = 8                      # 每次注入多少条「像此刻」的好样本
+bad_k = 4                       # 每次注入多少条反面样本
+recent_k = 4                    # 无论像不像，最近这几条一定带上（新反馈立刻生效）
+
 # 节奏
 max_total = 999
 min_gap = 75                     # 两条发言的基准间隔（秒），实际会随机化

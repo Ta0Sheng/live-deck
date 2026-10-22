@@ -99,6 +99,10 @@ class FishCfg:
     delay_comp: float = 2.3
     temperature: float = 0.7
     max_tokens: int = 40
+    retrieval: bool = True
+    good_k: int = 8
+    bad_k: int = 4
+    recent_k: int = 4
     send_danmaku: bool = False
     allow_gift: bool = False
     gift_daily_budget: int = 0

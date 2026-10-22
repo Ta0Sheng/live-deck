@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "live-deck"
-version = "1.0.0"
+version = "1.1.0"
 description = "B站 直播间的本地副驾驶：弹幕、字幕、画面理解，和一位会自己决定说不说话的观众"
 readme = "README.md"
 requires-python = ">=3.11"

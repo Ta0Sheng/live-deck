@@ -37,6 +37,7 @@
 | **双路字幕** | 实时通道（int8、4 秒切片）保证 8 秒内出字；精修通道（fp32、回看 36 秒）每 30 秒补一版更准的句子。慢的那路只写给鱼看，不挡界面 |
 | **像人度自评** | 生成完先让另一个 prompt 就「这一刻的语境」打 1–5 分，低于 `veto` 直接丢弃。把「像不像人」从玄学变成可调的阈值 |
 | **两条学习轴** | 「话说得像不像人」和「这个场面该不该开口」分开记样本。负例分两轴、正例合一，避免两条线互相污染 |
+| **检索式样本 + 离线评测** | 旧经验不再被「最近 24 条」挤掉：按当前场面相似度取样本；固定评测集让每次改动都能用数字比较 |
 | **人格 / 记忆 / 配置三层分离** | 人格进仓库、跟着项目走；记忆和样本落在 `data/`（gitignore），新电脑上是空的。换人格不动代码，清记忆不丢人格 |
 | **安全默认** | `send_danmaku` / `allow_gift` 两道硬闸默认关；送礼还有按天预算账本。任何命令行参数都绕不过配置 |
 | **进程治理** | 单实例文件锁、孤儿进程清理、下播退避、关窗杀整棵进程树。这些是「跑一整晚不出事」和 demo 的差别 |
@@ -132,6 +133,8 @@ pip install -e ".[asr]" && live-deck init && live-deck demo
 | `fish.allow_gift` | `false` | **总闸**：关着就永远不会花钱 |
 | `fish.gift_daily_budget` | `0` | 允许送礼时每天最多花多少金瓜子（100 = 1 元） |
 | `fish.owner_uid` | `""` | 只有这个 uid 能点单送礼；空 = 谁都不行 |
+| `fish.retrieval` | `true` | 按场面检索样本；`false` 退回「最近 N 条」 |
+| `fish.good_k` / `bad_k` | `8` / `4` | 每次注入的相似样本数 |
 
 ## 人格与记忆
 
@@ -163,6 +166,21 @@ data/                     ← gitignore，新电脑上是空的
 - **✘景** —— 这个场面不该开口 → 进「语境不对」
 
 负例分两轴，是为了让「什么时候闭嘴」不被「怎么说话」的样本带偏。
+
+样本也不是「只取最近 N 条」：每次发言前按当前场面从 `data/samples/` 里检索最像的
+8 条好样本 / 4 条坏样本，再带上最近 4 条兜底——旧经验不会被新样本挤掉，你刚点的反馈也立刻生效
+（`fish.retrieval`，可关掉退回旧行为做 A/B）。
+
+### 评测：它到底有没有变好
+
+```bash
+live-deck eval make --n 40      # 从 data/logs 抽 40 个固定场面（也可 --logs 指旧项目日志）
+live-deck eval run              # 逐条生成候选，盲评 1–5（--auto 用评审器自动打分）
+live-deck eval report           # 最近几次的均分 / 跳过率 / 平均长度并排
+```
+
+场面固定、尺子固定，改动（检索、样本、人格、模型）才有可比性。`eval run` 的结果写在
+`data/eval/runs/`，和评测集一样不进 git——它们是「这条鱼经历过什么」，不是代码。
 
 ## 安全与合规
 
@@ -197,12 +215,12 @@ live-deck/
 │   ├── fish/          直播鱼：人格加载、决策循环、预算
 │   ├── asr/           streaming（快）/ sensevoice（准）
 │   ├── demo.py        演示模式的数据源
-│   ├── cli.py         init / doctor / login / models / serve / app / demo
+│   ├── cli.py         init / doctor / login / models / serve / app / demo / eval
 │   ├── config.py      TOML + 环境变量 + 相对路径
 │   ├── bili.py        凭证、房间、流地址、抽帧、钱包
 │   └── host.py        桌面窗口（pywebview / 浏览器降级）
 ├── persona/           人格与示例（进仓库）
-├── tests/             36 个离线测试，不需要账号
+├── tests/             50 个离线测试，不需要账号
 ├── docs/              架构、部署、人格、FAQ
 ├── scripts/           Windows / Unix 一键脚本
 └── .github/workflows/ CI：ruff + pytest（Ubuntu/Windows × 3.11–3.13）

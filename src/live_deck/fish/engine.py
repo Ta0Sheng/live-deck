@@ -37,6 +37,7 @@ from .. import bili
 from ..config import get_settings
 from .budget import GiftBudget
 from .persona import load_persona
+from .samples import Sample, load_samples, select_samples
 
 S = get_settings()
 BANNED = re.compile(r"骗|诈骗|违法|犯罪|刑|未成年|举报|起诉|人渣|骗子")
@@ -67,14 +68,14 @@ def _read_bullets(path: Path, n: int) -> list[str]:
     return rows[-n:]
 
 
-def load_good(n: int = 24) -> list[str]:
+def load_good(n: int = 0) -> list[Sample]:
     """用户夸过的发言：学味道（怎么问、怎么回扣），别照抄。"""
-    return _read_bullets(GOOD_PATH, n)
+    return load_samples(GOOD_PATH, limit=n or None)
 
 
-def load_bad(n: int = 12) -> list[str]:
+def load_bad(n: int = 0) -> list[Sample]:
     """用户点名扣分的说法：反面例子，别学这个语气。"""
-    return _read_bullets(BAD_PATH, n)
+    return load_samples(BAD_PATH, limit=n or None)
 
 
 # 语境轴单独记 —— 「这个场面该不该接」和「这话说得像不像人」是两回事。
@@ -82,12 +83,38 @@ CTX_GOOD_PATH = S.ctx_good_samples
 CTX_BAD_PATH = S.ctx_bad_samples
 
 
-def load_ctx_good(n: int = 8) -> list[str]:
-    return _read_bullets(CTX_GOOD_PATH, n)
+def load_ctx_good(n: int = 0) -> list[Sample]:
+    return load_samples(CTX_GOOD_PATH, limit=n or None)
 
 
-def load_ctx_bad(n: int = 8) -> list[str]:
-    return _read_bullets(CTX_BAD_PATH, n)
+def load_ctx_bad(n: int = 0) -> list[Sample]:
+    return load_samples(CTX_BAD_PATH, limit=n or None)
+
+
+def _pick(pool: list[Sample], context: str, k: int, recent: int) -> list[Sample]:
+    """相似检索 + 最近兜底；retrieval=false 时退回「最近 N 条」。"""
+    if not pool:
+        return []
+    if not S.fish.retrieval:
+        return pool[-max(k, 1):]
+    return select_samples(pool, context, k=k, recent=recent)
+
+
+def reload_samples() -> None:
+    """重新读四份样本文件（界面 ✔/✘ 写进去的）。"""
+    global good_lines, bad_lines, ctx_good, ctx_bad
+    good_lines, bad_lines = load_good(), load_bad()
+    ctx_good, ctx_bad = load_ctx_good(), load_ctx_bad()
+
+
+def prepare_room(room: int) -> None:
+    """切房间时刷新「这间房怎么说话 / 问什么 / 知道什么」，评测和独立运行都用得上。"""
+    global room_id_for_log, danmaku_style, question_samples, kb_lines, last_q_refresh
+    room_id_for_log = int(room)
+    danmaku_style = load_danmaku_style()
+    question_samples = load_question_samples(int(room))
+    kb_lines = load_kb(int(room))
+    last_q_refresh = time.time()
 DM_LOG_DIR = S.danmaku_dir
 # 这间房的「名词/疑问 → 答案」：鱼问明白的记在这，下次不再问第二遍
 KB_DIR = S.knowledge_dir
@@ -355,6 +382,11 @@ async def ask_model(key: str, context: str, image_jpeg: bytes | None = None) -> 
     except Exception:
         mem = ""
     system = SYSTEM_PROMPT
+    # 检索：用「此刻」去挑最像的旧经验；最近几条永远兜底，保证新反馈立刻生效
+    goods = _pick(good_lines, context, S.fish.good_k, S.fish.recent_k)
+    bads = _pick(bad_lines, context, S.fish.bad_k, min(2, S.fish.recent_k))
+    ctx_ok = _pick(ctx_good, context, 4, 1)
+    ctx_no = _pick(ctx_bad, context, 4, 1)
     if corpus_lines:
         system += "\n\n【Neuro 的真实台词样本 —— 学句式、节奏、收尾，别照抄】\n" + "\n".join(corpus_lines)
     if danmaku_style:
@@ -365,19 +397,21 @@ async def ask_model(key: str, context: str, image_jpeg: bytes | None = None) -> 
                    + "\n".join(f"· {s}" for s in signal_lines))
     if mem:
         system += "\n\n【你和 QQ/B站 共用的记忆，用得上就自然带出来，别整段复述】\n" + mem
-    if good_lines:
-        system += ("\n\n【用户亲口夸过「观感不错」的发言 —— 学这个味道（怎么问、怎么回扣、怎么用学到的词），别照抄。"
+    if goods:
+        system += ("\n\n【用户亲口夸过「观感不错」的发言（优先挑和此刻最像的）—— 学这个味道"
+                   "（怎么问、怎么回扣、怎么用学到的词），别照抄。"
                    "注意：「我搜过了」这种话只有系统真给了你资料才能说】\n"
-                   + "\n".join(f"✓ {g}" for g in good_lines))
-    if bad_lines:
+                   + "\n".join(sample.prompt("✓") for sample in goods))
+    if bads:
         system += ("\n\n【扣分的说法：同样是场面 + 那句话，这样的接法在这个场面里不像人】\n"
-                   + "\n".join(f"✗ {b}" for b in bad_lines))
-    # 2026-10-22：语境轴 —— 只判「这个场面该不该开口」，和像不像人分开学
-    if ctx_good:
-        system += ("\n\n【用户标过「这个场面接得对」的】\n" + "\n".join(f"· {g}" for g in ctx_good))
-    if ctx_bad:
+                   + "\n".join(sample.prompt("✗") for sample in bads))
+    # 语境轴 —— 只判「这个场面该不该开口」，和像不像人分开学
+    if ctx_ok:
+        system += ("\n\n【用户标过「这个场面接得对」的（优先挑和此刻最像的）】\n"
+                   + "\n".join(sample.prompt("·") for sample in ctx_ok))
+    if ctx_no:
         system += ("\n\n【用户标过「这个场面不该接」的 —— 语境不对，话再好也别开口】\n"
-                   + "\n".join(f"· {b}" for b in ctx_bad))
+                   + "\n".join(sample.prompt("·") for sample in ctx_no))
     if question_samples:
         system += ("\n\n【这间房观众怎么问问题 —— 学他们提问的角度和口气：短、具体、像随口一问；别照抄内容】\n"
                    + "\n".join(f"· {q}" for q in question_samples))
@@ -491,8 +525,8 @@ async def do_search(key: str, room: int, term: str) -> str:
     return ""
 
 
-def judge_system() -> str:
-    """打分用的判据：把用户点过名的那两批例子带上，才评得准。"""
+def judge_system(context: str = "") -> str:
+    """打分用的判据：把和此刻最像的那批例子带上，才评得准。"""
     s = (
         "你是直播间里的老观众，在判断一条弹幕像不像真人说的。\n"
         "像人：接住此刻正在发生的事、有情绪、有具体的疑问、短。\n"
@@ -502,10 +536,12 @@ def judge_system() -> str:
         "硬规则：吐槽主播的设备/网速/画面/游戏优化 → 最多 2 分；复述主播刚说的原话 → 最多 2 分；"
         "对主播本人的真诚评价（夸、调侃、感慨）→ 至少 3 分。\n"
     )
-    if good_lines:
-        s += "\n像人的（加分）：\n" + "\n".join(f"✓ {g}" for g in good_lines[-10:])
-    if bad_lines:
-        s += "\n不像人的（扣分）：\n" + "\n".join(f"✗ {b}" for b in bad_lines[-6:])
+    goods = _pick(good_lines, context, 6, 3)
+    bads = _pick(bad_lines, context, 4, 2)
+    if goods:
+        s += "\n像人的（加分）：\n" + "\n".join(sample.prompt("✓") for sample in goods)
+    if bads:
+        s += "\n不像人的（扣分）：\n" + "\n".join(sample.prompt("✗") for sample in bads)
     s += ("\n\n先一句话说理由（这句子在这个场面里像不像人，卡在哪），再单独一行写「分数：X」。\n"
            "1=一眼机器人（复述/总结/挑刺/答非所问）；2=有点机械；3=普通观众水平；4=自然、有细节；5=很像真人。")
     return s
@@ -516,7 +552,7 @@ async def judge_human(key: str, ctx: str, reply: str) -> float:
     """就这一刻的语境，给这句话的「像人度」打 1-5 分。"""
     payload = {
         "model": S.fish.model,
-        "messages": [{"role": "system", "content": judge_system()}, {"role": "user", "content": f"【此刻语境】\n{ctx[:700]}\n\n【这条弹幕】\n{reply}"}],
+        "messages": [{"role": "system", "content": judge_system(ctx)}, {"role": "user", "content": f"【此刻语境】\n{ctx[:700]}\n\n【这条弹幕】\n{reply}"}],
         "max_tokens": 80,
         "temperature": 0,
         "thinking": {"type": "disabled"},

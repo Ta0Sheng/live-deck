@@ -540,6 +540,184 @@ def cmd_persona(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── eval ─────────────────────────────────────────────────────────────────────
+
+
+def _eval_paths():
+    settings = _settings()
+    root = settings.data_dir / "eval"
+    return root / "scenes.jsonl", root / "runs"
+
+
+def _eval_make(ev, settings, args) -> int:
+    scenes_path, _ = _eval_paths()
+    if scenes_path.exists() and not args.force:
+        print(f"{scenes_path} 已经存在。要重建加 --force（旧的会被覆盖）。")
+        return 1
+    logs = Path(args.logs).expanduser() if args.logs else settings.logs_dir
+    danmaku = Path(args.danmaku).expanduser() if args.danmaku else settings.danmaku_dir
+    scenes = ev.collect_scenes(logs, danmaku, n=args.n)
+    if not scenes:
+        print(f"在 {logs} 里没找到可用的字幕日志。")
+        print("也可以指到旧项目的日志目录：live-deck eval make --logs <你的 直播日志 目录>")
+        return 1
+    ev.save_scenes(scenes, scenes_path)
+    source = "真实日志" if scenes[0].source == "log" else "内置示例"
+    print(f"已生成 {len(scenes)} 个场面（{source}） -> {scenes_path}")
+    print("下一步：live-deck eval run")
+    return 0
+
+
+def _ask_score() -> float | None:
+    while True:
+        raw = input("  1-5 分（s=跳过这句，q=保存并退出）：").strip().lower()
+        if raw in ("q", "quit"):
+            return None
+        if raw in ("s", "skip"):
+            return 0.0
+        try:
+            value = float(raw)
+        except ValueError:
+            value = 0
+        if 1 <= value <= 5:
+            return value
+        print("  输入 1-5，或 s / q")
+
+
+async def _eval_run_async(ev, settings, args) -> int:
+    from . import bili
+    from .fish import engine
+
+    scenes_path, runs_dir = _eval_paths()
+    if args.scenes:
+        scenes_path = Path(args.scenes).expanduser()
+    scenes = ev.load_scenes(scenes_path)
+    if not scenes:
+        print(f"没有评测场面：{scenes_path}")
+        print("先生成：live-deck eval make")
+        return 1
+    if args.limit and args.limit > 0:
+        scenes = scenes[: args.limit]
+
+    key = bili.deepseek_key(required=False)
+    if not key:
+        print("评测需要生成候选句，得先配 DeepSeek key（live-deck login 不管这个）。")
+        return 1
+
+    engine.reload_samples()
+    meta = {
+        "created": time.time(),
+        "model": settings.fish.model,
+        "retrieval": settings.fish.retrieval,
+        "per_scene": max(1, args.per_scene),
+        "auto": bool(args.auto),
+        "scenes": str(scenes_path),
+    }
+    run_path = ev.new_run_path(runs_dir)
+    rows: list[dict] = []
+    current_room: int | None = None
+
+    print(f"评测 {len(scenes)} 个场面，每个 {meta['per_scene']} 条候选；结果写 {run_path}")
+    try:
+        for index, scene in enumerate(scenes, 1):
+            if scene.room.isdigit() and int(scene.room) != current_room:
+                current_room = int(scene.room)
+                engine.prepare_room(current_room)
+            replies: list[str] = []
+            for _ in range(meta["per_scene"]):
+                try:
+                    replies.append(await engine.ask_model(key, scene.context))
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  [{index}] 生成失败：{exc}")
+                    replies.append("")
+
+            for position, reply in enumerate(replies, 1):
+                if not reply or reply.upper().startswith("SKIP"):
+                    rows.append(
+                        {"scene": scene.id, "reply": "", "score": 0, "skipped": True, "auto": meta["auto"]}
+                    )
+                    print(f"  [{index}] 候选 {position}：SKIP")
+                    continue
+                if args.auto:
+                    score = await engine.judge_human(key, scene.context, reply)
+                else:
+                    print()
+                    print(f"[{index}/{len(scenes)}] {scene.id}  {scene.time}  room={scene.room}")
+                    print(scene.context[-700:])
+                    print(f"  候选 {position}：{reply}")
+                    score = _ask_score()
+                    if score is None:
+                        raise KeyboardInterrupt
+                rows.append(
+                    {
+                        "scene": scene.id,
+                        "reply": reply,
+                        "score": float(score),
+                        "skipped": float(score) <= 0,
+                        "auto": meta["auto"],
+                    }
+                )
+    finally:
+        ev.save_run(run_path, meta, rows)
+        stats = ev.summarize(rows)
+        print()
+        print(f"已保存 {len(rows)} 条 -> {run_path}")
+        print(
+            f"均分 {stats['mean']}/5（{stats['scored']} 条），"
+            f"跳过 {stats['skip_rate']:.0%}，平均 {stats['avg_len']} 字"
+        )
+    return 0
+
+
+def _eval_run(ev, settings, args) -> int:
+    try:
+        return asyncio.run(_eval_run_async(ev, settings, args))
+    except KeyboardInterrupt:
+        print("\n已中断；已经打的分都保存了。")
+        return 130
+
+
+def _eval_report(ev, settings, args) -> int:
+    _, runs_dir = _eval_paths()
+    runs = sorted(runs_dir.glob("*.jsonl"))
+    if not runs:
+        print(f"还没有评测记录：{runs_dir}")
+        print("先 live-deck eval make，再 live-deck eval run")
+        return 1
+    runs = runs[-max(1, args.runs) :]
+    print(f"{'时间':<16} {'模型':<16} {'检索':<5} {'条数':>4} {'均分':>5} {'跳过':>4} {'长度':>4}")
+    previous: float | None = None
+    for path in runs:
+        meta, rows = ev.read_run(path)
+        stats = ev.summarize(rows)
+        stamp = time.strftime("%m-%d %H:%M", time.localtime(path.stat().st_mtime))
+        model = str(meta.get("model") or "?")
+        retrieval = "开" if meta.get("retrieval") else "关"
+        delta = ""
+        if previous is not None:
+            delta = f" ({stats['mean'] - previous:+.2f})"
+        print(
+            f"{stamp:<16} {model:<16} {retrieval:<5} {stats['scored']:>4} "
+            f"{stats['mean']:>5}{delta} {stats['skip_rate']:>4.0%} {stats['avg_len']:>4}"
+        )
+        previous = float(stats["mean"])
+    print()
+    print("注：均分只统计打了分的候选；跳过率 = SKIP 的比例。不同次的场面固定，才可比。")
+    return 0
+
+
+def cmd_eval(args: argparse.Namespace) -> int:
+    from . import eval as ev
+
+    settings = _settings()
+    action = getattr(args, "eval_action", None) or "report"
+    if action == "make":
+        return _eval_make(ev, settings, args)
+    if action == "run":
+        return _eval_run(ev, settings, args)
+    return _eval_report(ev, settings, args)
+
+
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 
 
@@ -597,6 +775,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true")
     p.add_argument("--lines", type=int, default=15)
     p.set_defaults(func=cmd_persona)
+
+    p = sub.add_parser("eval", help="离线评测：固定场面、盲评、比较版本")
+    eval_sub = p.add_subparsers(dest="eval_action")
+    make = eval_sub.add_parser("make", help="从字幕日志生成固定场面")
+    make.add_argument("--n", type=int, default=40)
+    make.add_argument("--logs", default=None, help="字幕日志目录（默认 data/logs）")
+    make.add_argument("--danmaku", default=None, help="弹幕目录（默认 data/danmaku）")
+    make.add_argument("--force", action="store_true")
+    make.set_defaults(func=cmd_eval)
+    run = eval_sub.add_parser("run", help="生成候选并打分")
+    run.add_argument("--per-scene", type=int, default=1)
+    run.add_argument("--limit", type=int, default=0)
+    run.add_argument("--auto", action="store_true", help="用评审器自动打分（不手动）")
+    run.add_argument("--scenes", default=None)
+    run.set_defaults(func=cmd_eval)
+    report = eval_sub.add_parser("report", help="比较最近几次评测")
+    report.add_argument("--runs", type=int, default=3)
+    report.set_defaults(func=cmd_eval)
+    p.set_defaults(func=cmd_eval)
 
     return parser
 

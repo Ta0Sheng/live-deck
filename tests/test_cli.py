@@ -33,3 +33,14 @@ def test_persona_command(capsys):
     out = capsys.readouterr().out
     assert "人格文件" in out
     assert "大肥鱼" in out
+
+
+def test_eval_subcommands_parse():
+    parser = cli.build_parser()
+    args = parser.parse_args(["eval", "make"])
+    assert args.func is cli.cmd_eval
+    assert args.eval_action == "make"
+    args = parser.parse_args(["eval", "run", "--auto"])
+    assert args.auto is True
+    args = parser.parse_args(["eval", "report", "--runs", "5"])
+    assert args.runs == 5

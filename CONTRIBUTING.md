@@ -17,7 +17,7 @@ live-deck demo                   # 不需要账号/模型，验证界面
 ## 测试与检查
 
 ```bash
-pytest                 # 36 个离线测试，不联网、不需要账号
+pytest                 # 50 个离线测试，不联网、不需要账号
 ruff check src tests
 python -m compileall -q src
 ```
@@ -43,6 +43,7 @@ CI 在 Ubuntu / Windows × Python 3.11–3.13 上跑这三条。**不要**在 CI
 - [ ] 没有真实昵称、uid、房间号、截图里的观众信息
 - [ ] 新配置项写进 `config.example.toml`，并在 README 的配置表里加一行
 - [ ] 改行为的话，同步更新 `docs/architecture.md` 或对应文档
+- [ ] 改了样本 / prompt / 阈值：跑一次 `live-deck eval run`，把均分变化写进 PR
 
 ## 提交信息
 
