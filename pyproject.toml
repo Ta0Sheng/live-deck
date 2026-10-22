@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "live-deck"
+version = "1.0.0"
+description = "B站 直播间的本地副驾驶：弹幕、字幕、画面理解，和一位会自己决定说不说话的观众"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "live-deck contributors" }]
+keywords = ["bilibili", "live", "asr", "sherpa-onnx", "llm", "agent", "streaming"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+  "aiohttp>=3.9",
+  "requests>=2.31",
+  "bilibili-api-python>=17.4",
+  "psutil>=5.9",
+]
+
+[project.optional-dependencies]
+asr = ["av>=12", "numpy>=1.26", "sherpa-onnx>=1.10"]
+asr-gpu = [
+  "av>=12",
+  "numpy>=1.26",
+  "sherpa-onnx>=1.10",
+  "torch>=2.2",
+  "torchaudio>=2.2",
+  "demucs>=4.0",
+]
+window = ["pywebview>=5"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_NAME/live-deck"
+Issues = "https://github.com/YOUR_NAME/live-deck/issues"
+
+[project.scripts]
+live-deck = "live_deck.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+live_deck = ["deck/web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E501"]

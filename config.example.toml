@@ -1,0 +1,68 @@
+# live-deck 配置
+# 复制成 config.toml 再改（`live-deck init` 会自动做）。
+# 所有相对路径都相对**这个文件所在目录**，整个文件夹搬走不用改任何东西。
+
+[deck]
+host = "127.0.0.1"
+port = 8765
+python = ""                      # 空 = 当前解释器；宿主/服务端分 venv 时填服务端 python
+frame_interval = 60              # 画面识别间隔（秒）
+asr_engine = "sensevoice"        # sensevoice（准，约 8 秒延迟）| streaming（快，错字多）
+ai_fix = true                    # 精修字幕再过一遍 LLM 纠同音字
+fish = true                      # 由服务端托管直播鱼
+ffmpeg = ""                      # 空 = 从 PATH 找；找不到就填绝对路径
+open_browser = true
+
+[asr]
+python = ""                      # 空 = 当前解释器；GPU 版想单独一个 venv 就填这里
+model_dir = "models/sensevoice"
+streaming_model_dir = "models/streaming-zipformer"
+chunk_seconds = 4.0              # 实时通道切片；越小延迟越低、上下文越短
+clean = true                     # 精修通道（fp32 + 长上下文，慢但准）
+clean_every = 30.0               # 精修多久出一段
+clean_window = 36.0              # 精修回看多少秒
+threads = 8
+separate = true                  # streaming 引擎是否用 Demucs 分离人声
+
+[fish]
+enabled = true
+persona = "persona/persona.md"   # 人格：进仓库，跟着项目走
+memory = ""                      # 记忆：留空 = 不带任何记忆（新电脑就是空的）
+name = "大肥鱼"
+call_word = "鱼"                 # 观众用「鱼，」叫它
+addresses = ["大肥鱼", "肥鱼", "这条鱼"]
+
+# 模型
+model = "deepseek-chat"
+flash_model = "deepseek-flash"
+temperature = 0.7
+max_tokens = 40
+
+# 节奏
+max_total = 999
+min_gap = 75                     # 两条发言的基准间隔（秒），实际会随机化
+max_per_hour = 999
+veto = 3.3                       # 像人度低于此分就不发；越高越安静
+vision = 120                     # 每隔多少秒看一次画面（0=关）
+frame_ttl = 45                   # 发言时画面超过这么久就重抓（0=不抓）
+delay_comp = 2.3                 # 扣掉人声分离带来的额外延迟
+
+# ── 安全总闸：默认全关，开之前想清楚 ─────────────────────────────────────────
+send_danmaku = false             # false = 永远只出草稿，任何命令行参数都改不了
+allow_gift = false               # false = 永远不会送礼（不会花钱）
+gift_daily_budget = 0            # 允许送礼时，每天最多花多少金瓜子（100 = 1 元）
+owner_uid = ""                   # 只有这个 uid 能在弹幕里点单送礼；空 = 谁都不行
+bot_uid = 0                      # 0 = 从凭证里的 DedeUserID 读
+
+# 样本：首次运行从 persona/examples 播种，之后只改 data/（不进 git）
+good_samples = "data/samples/good.md"
+bad_samples = "data/samples/bad.md"
+ctx_good_samples = "data/samples/context-good.md"
+ctx_bad_samples = "data/samples/context-bad.md"
+
+[paths]
+data_dir = "data"
+
+[secrets]
+deepseek_key_file = ".secrets/deepseek_key.txt"
+bili_credential_file = ".secrets/bili_credential.json"

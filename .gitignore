@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# 运行时数据：记忆、日志、样本、知识库 —— 都不进仓库
+config.toml
+data/
+models/
+*.log
+
+# 凭证：等于账号密码
+.secrets/
+.env
+*credential*.json
+
+# bilibili-api 在 TEMP 指错时会落到当前目录
+/qrcode.png
+/test.png
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+pytest-of-*/
+
