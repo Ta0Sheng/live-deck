@@ -28,7 +28,7 @@ Both sending abilities are behind explicit config gates, and gifts additionally 
 ## Quick start
 
 ```bash
-git clone https://github.com/YOUR_NAME/live-deck.git
+git clone https://github.com/Ta0Sheng/live-deck.git
 cd live-deck
 
 python -m venv .venv

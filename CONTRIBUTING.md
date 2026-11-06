@@ -3,7 +3,7 @@
 ## 本地环境
 
 ```bash
-git clone https://github.com/YOUR_NAME/live-deck.git
+git clone https://github.com/Ta0Sheng/live-deck.git
 cd live-deck
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate

@@ -5,9 +5,9 @@
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
-[![CI](https://github.com/YOUR_NAME/live-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_NAME/live-deck/actions/workflows/ci.yml)
+[![CI](https://github.com/Ta0Sheng/live-deck/actions/workflows/ci.yml/badge.svg)](https://github.com/Ta0Sheng/live-deck/actions/workflows/ci.yml)
 
-<!-- 发布前把上面两处 YOUR_NAME 换成你的 GitHub 用户名 -->
+
 
 ![界面截图](docs/screenshots/demo.png)
 
@@ -73,7 +73,7 @@ flowchart LR
 要求：Python **3.11+**、`ffmpeg` 在 PATH 里。字幕需要额外装 `.[asr]`；有 NVIDIA 显卡可以装 `.[asr-gpu]`。
 
 ```bash
-git clone https://github.com/YOUR_NAME/live-deck.git
+git clone https://github.com/Ta0Sheng/live-deck.git
 cd live-deck
 
 python -m venv .venv

@@ -42,8 +42,8 @@ window = ["pywebview>=5"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_NAME/live-deck"
-Issues = "https://github.com/YOUR_NAME/live-deck/issues"
+Homepage = "https://github.com/Ta0Sheng/live-deck"
+Issues = "https://github.com/Ta0Sheng/live-deck/issues"
 
 [project.scripts]
 live-deck = "live_deck.cli:main"
